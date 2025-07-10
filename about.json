@@ -1,14 +1,15 @@
 {
   "name": "Copy post button",
   "component": true,
-  "authors": "Discourse",
+  "authors": "Discourse edited by Jim Kleiber",
   "about_url": "https://meta.discourse.org/t/copy-post-component/218883",
   "license_url": "https://github.com/discourse/discourse-copy-post/blob/main/LICENSE",
   "theme_version": "1.0",
   "modifiers": {
     "svg_icons": [
       "far-copy",
-      "check"
+      "check",
+      "paper-plane"
     ]
   }
 }
