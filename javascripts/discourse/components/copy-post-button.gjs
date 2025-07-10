@@ -1,15 +1,18 @@
 import Component from "@glimmer/component";
 import { tracked } from "@glimmer/tracking";
 import { action } from "@ember/object";
-import { inject as service } from '@ember/service';
+import { inject as service } from '@ember/service'; // Still inject, but will use global as fallback
 import DButton from "discourse/components/d-button";
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
 import discourseLater from "discourse/lib/later";
 
+// Access the global Discourse object directly
+const DiscourseNotification = window.Discourse && window.Discourse.Notification;
+
 export default class SendToTypefullyButton extends Component {
   @service siteSettings;
-  @service notifications; // This is the service in question
+  // @service notifications; // No longer directly using this injected service for notifications
 
   static hidden() {
     return false;
@@ -17,36 +20,28 @@ export default class SendToTypefullyButton extends Component {
 
   @tracked icon = "paper-plane";
 
+  // Helper function to display notifications
+  // This function will attempt to use the global Discourse.Notification
+  // If that's not available, it will fall back to console.error/log
+  _displayNotification(type, message) {
+    if (DiscourseNotification && typeof DiscourseNotification[type] === 'function') {
+      DiscourseNotification[type](message);
+    } else {
+      // Fallback if Discourse.Notification is not fully available
+      console[type === 'error' ? 'error' : 'log'](`Notification (${type}): ${message}`);
+      // As a last resort for visibility, if notifications are completely broken
+      // alert(`Notification (${type}): ${message}`); // Re-enable for debugging if needed
+    }
+  }
+
   @action
   async sendToTypefully() {
-    // --- DEBUGGING START ---
-    console.log('DEBUG: this.notifications object:', this.notifications);
-    if (this.notifications) {
-      console.log('DEBUG: Type of this.notifications.error:', typeof this.notifications.error);
-      if (typeof this.notifications.error !== 'function') {
-        console.error('DEBUG: this.notifications exists, but .error is NOT a function. It is:', this.notifications.error);
-        // Fallback for debugging if notifications.error is truly missing or not a function
-        // In a real app, you'd want a more robust error display mechanism if the notification service fails.
-        // For now, this helps confirm the issue.
-        alert("Discourse Notifications service 'error' method is unavailable. Check console for details.");
-      }
-    } else {
-      console.error('DEBUG: this.notifications object is undefined or null. Service injection might be failing.');
-      alert("Discourse Notifications service is unavailable. Check console for details.");
-    }
-    // --- DEBUGGING END ---
-
     this.icon = "spinner";
 
     const postContents = await this.fetchRawPost(this.args.post.id);
 
     if (!postContents) {
-      // Defensive check before calling notifications.error
-      if (this.notifications && typeof this.notifications.error === 'function') {
-        this.notifications.error("Could not retrieve post content.");
-      } else {
-        console.error("Could not retrieve post content, and notifications service is not fully functional.");
-      }
+      this._displayNotification("error", "Could not retrieve post content.");
       this.resetIcon();
       return;
     }
@@ -54,11 +49,7 @@ export default class SendToTypefullyButton extends Component {
     const typefullyApiKey = this.siteSettings.typefully_api_key;
 
     if (!typefullyApiKey || typefullyApiKey === 'YOUR_TYPEFULLY_API_KEY_PLACEHOLDER') {
-      if (this.notifications && typeof this.notifications.error === 'function') {
-        this.notifications.error("Typefully API key is not configured. Please set it in Discourse site settings.");
-      } else {
-        console.error("Typefully API key is not configured, and notifications service is not fully functional.");
-      }
+      this._displayNotification("error", "Typefully API key is not configured. Please set it in Discourse site settings.");
       this.resetIcon();
       return;
     }
@@ -80,31 +71,21 @@ export default class SendToTypefullyButton extends Component {
 
       if (response.ok) {
         const data = await response.json();
-        if (this.notifications && typeof this.notifications.success === 'function') {
-          this.notifications.success(`Draft sent to Typefully! Draft ID: ${data.id}`);
-        }
+        this._displayNotification("success", `Draft sent to Typefully! Draft ID: ${data.id}`);
         this.icon = "check";
         console.log("Typefully API Response:", data);
       } else {
         const errorData = await response.json();
         const errorMessage = errorData.message || response.statusText;
-        if (this.notifications && typeof this.notifications.error === 'function') {
-          this.notifications.error(`Failed to send draft: ${errorMessage}`);
-        } else {
-          console.error(`Failed to send draft: ${errorMessage}, and notifications service is not fully functional.`);
-        }
+        this._displayNotification("error", `Failed to send draft: ${errorMessage}`);
         this.icon = "exclamation-triangle";
         console.error("Typefully API Error:", errorData);
       }
     } catch (error) {
-      if (this.notifications && typeof this.notifications.error === 'function') {
-        this.notifications.error(`An error occurred: ${error.message}. Check console for details.`);
-      } else {
-        console.error(`An error occurred: ${error.message}, and notifications service is not fully functional.`);
-      }
+      this._displayNotification("error", `An error occurred: ${error.message}. Check console for details.`);
       this.icon = "exclamation-triangle";
       console.error("Network or API call error:", error);
-      popupAjaxError(error);
+      popupAjaxError(error); // Still use this for more detailed AJAX error popups
     } finally {
       discourseLater(() => {
         this.icon = "paper-plane";
