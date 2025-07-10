@@ -10,3 +10,9 @@ copy_button_allowed_groups:
   list_type: group
   default: "11" # trust_level_1
   description: "Select the groups that are allowed to use the copy button."
+typefully_api_key:
+  default: "YOUR_TYPEFULLY_API_KEY_PLACEHOLDER"
+  client: true
+  type: string
+  description: "Your API key for integrating with Typefully. Obtain this from your Typefully account settings."
+  secret: true # This makes the setting's value encrypted and hidden in UI
