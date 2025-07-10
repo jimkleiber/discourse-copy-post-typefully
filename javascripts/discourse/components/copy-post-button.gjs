@@ -1,126 +1,139 @@
 import Component from "@glimmer/component";
 import { tracked } from "@glimmer/tracking";
 import { action } from "@ember/object";
-import { inject as service } from '@ember/service'; // Import service for siteSettings and notifications
+import { inject as service } from '@ember/service';
 import DButton from "discourse/components/d-button";
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
 import discourseLater from "discourse/lib/later";
 
 export default class SendToTypefullyButton extends Component {
-  // Inject the siteSettings service to access configured API keys
   @service siteSettings;
-  // Inject the notifications service for user feedback
-  @service notifications;
+  @service notifications; // This is the service in question
 
-  // Define if the button should be hidden by default
   static hidden() {
     return false;
   }
 
-  // Track the icon state for visual feedback (e.g., loading, success)
-  @tracked icon = "paper-plane"; // Default icon for sending
+  @tracked icon = "paper-plane";
 
-  // Action to handle sending the post to Typefully
   @action
   async sendToTypefully() {
-    // Show a loading spinner
+    // --- DEBUGGING START ---
+    console.log('DEBUG: this.notifications object:', this.notifications);
+    if (this.notifications) {
+      console.log('DEBUG: Type of this.notifications.error:', typeof this.notifications.error);
+      if (typeof this.notifications.error !== 'function') {
+        console.error('DEBUG: this.notifications exists, but .error is NOT a function. It is:', this.notifications.error);
+        // Fallback for debugging if notifications.error is truly missing or not a function
+        // In a real app, you'd want a more robust error display mechanism if the notification service fails.
+        // For now, this helps confirm the issue.
+        alert("Discourse Notifications service 'error' method is unavailable. Check console for details.");
+      }
+    } else {
+      console.error('DEBUG: this.notifications object is undefined or null. Service injection might be failing.');
+      alert("Discourse Notifications service is unavailable. Check console for details.");
+    }
+    // --- DEBUGGING END ---
+
     this.icon = "spinner";
 
-    // Get the raw content of the post
-    // The `fetchRawPost` method is ideal as Typefully expects plain text or markdown.
     const postContents = await this.fetchRawPost(this.args.post.id);
 
     if (!postContents) {
-      this.notifications.error("Could not retrieve post content.");
+      // Defensive check before calling notifications.error
+      if (this.notifications && typeof this.notifications.error === 'function') {
+        this.notifications.error("Could not retrieve post content.");
+      } else {
+        console.error("Could not retrieve post content, and notifications service is not fully functional.");
+      }
       this.resetIcon();
       return;
     }
 
-    // Retrieve the Typefully API key from Discourse site settings
-    // You must create a site setting named 'typefully_api_key' in your Discourse admin.
     const typefullyApiKey = this.siteSettings.typefully_api_key;
 
     if (!typefullyApiKey || typefullyApiKey === 'YOUR_TYPEFULLY_API_KEY_PLACEHOLDER') {
-      this.notifications.error("Typefully API key is not configured. Please set it in Discourse site settings.");
+      if (this.notifications && typeof this.notifications.error === 'function') {
+        this.notifications.error("Typefully API key is not configured. Please set it in Discourse site settings.");
+      } else {
+        console.error("Typefully API key is not configured, and notifications service is not fully functional.");
+      }
       this.resetIcon();
       return;
     }
 
     try {
-      // Prepare the payload for the Typefully API
       const payload = {
         content: postContents,
-        threadify: true, // This crucial parameter tells Typefully to auto-split the content
-        // You can add other Typefully API options here, e.g.:
-        // schedule_date: "next-free-slot",
-        // share: true,
+        threadify: true,
       };
 
-      // Make the API call to Typefully
       const response = await fetch('https://api.typefully.com/v1/drafts/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-API-KEY': typefullyApiKey, // Use the API key from site settings
+          'X-API-KEY': typefullyApiKey,
         },
         body: JSON.stringify(payload),
       });
 
-      // Handle the API response
       if (response.ok) {
         const data = await response.json();
-        this.notifications.success(`Draft sent to Typefully! Draft ID: ${data.id}`);
-        this.icon = "check"; // Success icon
+        if (this.notifications && typeof this.notifications.success === 'function') {
+          this.notifications.success(`Draft sent to Typefully! Draft ID: ${data.id}`);
+        }
+        this.icon = "check";
         console.log("Typefully API Response:", data);
       } else {
         const errorData = await response.json();
         const errorMessage = errorData.message || response.statusText;
-        this.notifications.error(`Failed to send draft: ${errorMessage}`);
-        this.icon = "exclamation-triangle"; // Error icon
+        if (this.notifications && typeof this.notifications.error === 'function') {
+          this.notifications.error(`Failed to send draft: ${errorMessage}`);
+        } else {
+          console.error(`Failed to send draft: ${errorMessage}, and notifications service is not fully functional.`);
+        }
+        this.icon = "exclamation-triangle";
         console.error("Typefully API Error:", errorData);
       }
     } catch (error) {
-      // Catch network errors or issues with the fetch operation
-      this.notifications.error(`An error occurred: ${error.message}. Check console for details.`);
-      this.icon = "exclamation-triangle"; // Error icon
+      if (this.notifications && typeof this.notifications.error === 'function') {
+        this.notifications.error(`An error occurred: ${error.message}. Check console for details.`);
+      } else {
+        console.error(`An error occurred: ${error.message}, and notifications service is not fully functional.`);
+      }
+      this.icon = "exclamation-triangle";
       console.error("Network or API call error:", error);
-      // Use Discourse's popupAjaxError for more detailed debugging if needed
       popupAjaxError(error);
     } finally {
-      // Reset the icon after a delay, regardless of success or failure
       discourseLater(() => {
         this.icon = "paper-plane";
       }, 2000);
     }
   }
 
-  // Helper function to fetch the raw content of the post
   async fetchRawPost(postId) {
     try {
       const { raw } = await ajax(`/posts/${postId}.json`);
       return raw;
     } catch (error) {
-      // Use popupAjaxError for network/server errors during raw post fetch
       popupAjaxError(error);
-      return null; // Return null if fetching fails
+      return null;
     }
   }
 
-  // Helper to reset the icon
   resetIcon() {
     discourseLater(() => {
       this.icon = "paper-plane";
     }, 2000);
   }
 
-  // Template for the DButton component
   <template>
     <DButton
       class="post-action-menu__send-to-typefully btn-flat"
-      @title={{themePrefix "send_to_typefully_title"}} // Use a theme prefix for translatable title
+      @title={{themePrefix "send_to_typefully_title"}}
       @icon={{this.icon}}
-      @action={{this.sendToTypefully}} // Call the new action
+      @action={{this.sendToTypefully}}
       ...attributes
     />
   </template>
